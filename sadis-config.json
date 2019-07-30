@@ -1,0 +1,33 @@
+{
+  "apps": {
+    "org.opencord.sadis": {
+      "sadis": {
+        "integration": {
+          "cache": {
+            "enabled": false,
+            "maxsize": 50,
+            "ttl": "PT0m"
+          }
+        },
+        "entries": [
+          {
+            "id": "BBSIMOLT000",
+            "hardwareIdentifier": ":OLT_HWADDR:",
+            "ipAddress": ":OLT_IPADDR:",
+            "nasId": "BBSIMOLT000",
+            "uplinkPort": 65536
+          },
+          {
+            "id": "BBSM00000001",
+            "cTag": 900,
+            "sTag": 900,
+            "nasPortId": "BBSM00000001",
+            "technologyProfileId": 64,
+            "upstreamBandwidthProfile": "High-Speed-Internet",
+            "downstreamBandwidthProfile": "User1-Specific"
+          }
+        ]
+      }
+    }
+  }
+}

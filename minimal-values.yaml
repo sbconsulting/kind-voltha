@@ -17,7 +17,30 @@ defaults:
 
 images:
   adapter_open_olt:
+#    repository: "smbaker/voltha-openolt-adapter"
+#    tag_go: racefixes-go
+#    tag: racefixes-py
     tag_go: master-go
+#  cli:
+#    repository: "smbaker/voltha-cli"
+#    tag: "ae3d9"
+#  ofagent:
+#    repository: "smbaker/voltha-ofagent"
+#    tag: "ae3d9"
+#  ro_core:
+#    repository: "smbaker/voltha-ro-core"
+#    tag: "ae3d9"
+#  rw_core:
+#    repository: "smbaker/voltha-rw-core"
+#    tag: "ae3d9"
+#  afrouter:
+#    repository: "smbaker/voltha-afrouter"
+#    tag: "ae3d9"
+#  afrouterd:
+#    repository: "smbaker/voltha-afrouterd"
+#    tag: "ae3d9"
+  onos:
+    tag: "1.13.5"
 
 deployments:
   etcdOperator: true
@@ -43,3 +66,5 @@ onos_env:
 kafka_broker: 'voltha-kafka.voltha.svc.cluster.local:9092'
 pon_ports: 1
 onus_per_pon_port: 1
+#wpa_wait: 300
+#dhcp_wait: 360

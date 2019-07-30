@@ -1,0 +1,68 @@
+{
+  "apps": {
+    "org.opencord.sadis": {
+      "sadis": {
+        "integration": {
+          "cache": {
+            "enabled": false,
+            "maxsize": 50,
+            "ttl": "PT0m"
+          }
+        },
+        "entries": [
+          {
+            "id": "BBSIMOLT000",
+            "hardwareIdentifier": ":OLT_HWADDR:",
+            "ipAddress": ":OLT_IPADDR:",
+            "nasId": "BBSIMOLT000",
+            "uplinkPort": 65536
+          },
+          {
+            "id": "BBSM00000001",
+            "cTag": 900,
+            "sTag": 900,
+            "nasPortId": "PON 2/1/01/1:1.1.1",
+            "technologyProfileId": 64,
+            "upstreamBandwidthProfile": "High-Speed-Internet",
+            "downstreamBandwidthProfile": "User1-Specific"
+          }
+        ]
+      },
+	"bandwidthprofile":{
+	    "integration":{
+		"cache":{
+		    "enabled":true,
+		    "maxsize":40,
+		    "ttl":"PT1m"
+		}
+	    },
+	    "entries":[
+		{
+		    "id":"Default",
+		    "cir":200000000,
+		    "cbs":348000,
+		    "eir":10000000,
+		    "ebs":348000,
+		    "air":10000000
+		},
+		{
+		    "id":"High-Speed-Internet",
+		    "cir":200000000,
+		    "cbs":348000,
+		    "eir":10000000,
+		    "ebs":348000,
+		    "air":10000000
+		},
+		{
+		    "id":"User1-Specific",
+		    "cir":300000000,
+		    "cbs":348000,
+		    "eir":20000000,
+		    "ebs":348000,
+		    "air":30000000
+		}
+	    ]
+	}
+    }
+  }
+}
