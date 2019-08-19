@@ -12,12 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+TOTAL_START_TIME=$(date +%s)
+
+FANCY=${FANCY:-1}
+if [ "$TERM X" == " X" ]; then
+    FANCY=0
+fi
 
 # trap ctrl-c and call ctrl_c()
 trap ctrl_c INT
 
 function ctrl_c() {
-    tput cnorm
+    echo -en $CNORM
     echo ""
     echo "ctrl-c trapped"
     echo "Thank you for trying 'votlha up'"
@@ -28,28 +34,53 @@ VOLTCTL_VERSION=${VOLTCTL_VERSION:-0.0.5-dev}
 KIND_VERSION=${KIND_VERSION:-v0.4.0}
 _VOLTCTL_VERSION=$(echo $VOLTCTL_VERSION | sed -e 's/-/_/g')
 
-BLACK=$(tput setaf 0)
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-BLUE=$(tput setaf 4)
-MAGENTA=$(tput setaf 5)
-CYAN=$(tput setaf 6)
-WHITE=$(tput setaf 7)
-BOLD=$(tput bold)
-NORMAL=$(tput sgr0)
-ERROR="\xe2\x9c\x97\x20"
+BLACK=
+RED=
+GREEN=
+YELLOW=
+BLUE=
+MAGENTA=
+CYAN=
+WHITE=
+BOLD=
+NORMAL=
+ERROR=
+CEOL=
+CNORM=
+CIVIS=
+if [ $FANCY -eq 1 ]; then
+    BLACK=$(tput setaf 0)
+    RED=$(tput setaf 1)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+    BLUE=$(tput setaf 4)
+    MAGENTA=$(tput setaf 5)
+    CYAN=$(tput setaf 6)
+    WHITE=$(tput setaf 7)
+    BOLD=$(tput bold)
+    NORMAL=$(tput sgr0)
+    ERROR="\xe2\x9c\x97\x20"
+    CEOL=$(tput el)
+    CNORM=$(tput cnorm)
+    CIVIS=$(tput civis)
+fi
 
 TYPE=${TYPE:-minimal}
+NAME=${NAME:-$TYPE}
+WITH_TIMINGS=${WITH_TIMINGS:-no}
 WITH_BBSIM=${WITH_BBSIM:-no}
 WITH_RADIUS=${WITH_RADIUS:-no}
 WITH_ONOS=${WITH_ONOS:-yes}
+CONFIG_SADIS=${CONFIG_SADIS:-no}
+INSTALL_ONOS_APPS=${INSTALL_ONOS_APPS:-no}
+WITH_TP=${WITH_TP:-yes}
 JUST_K8S=${JUST_K8S:-no}
 DEPLOY_K8S=${DEPLOY_K8S:-yes}
 SKIP_RESTART_API=${SKIP_RESTART_API:-no}
 INSTALL_KUBECTL=${INSTALL_KUBECTL:-yes}
 INSTALL_HELM=${INSTALL_HELM:-yes}
 USE_GO=${USE_GO:-yes}
+WAIT_ON_DOWN=${WAIT_ON_DOWN:-no}
 VOLTHA_LOG_LEVEL=${VOLTHA_LOG_LEVEL:-WARN}
 VOLTHA_CHART=${VOLTHA_CHART:=onf/voltha}
 VOLTHA_ADAPTER_SIM_CHART=${VOLTHA_ADAPTER_SIM_CHART:-onf/voltha-adapter-simulated}
@@ -69,233 +100,210 @@ if [ $(echo ":minimal:full:" | grep -ic ":$TYPE:") -eq 0 ]; then
     exit 1
 fi
 
-# Verify WITH_BBSIM settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$WITH_BBSIM:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$WITH_BBSIM value of '$WITH_BBSIM'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$WITH_BBSIM:") -eq 1 ]; then
-    WITH_BBSIM=yes
-else
-    WITH_BBSIM=no
-fi
+# Used to verify configuration values are set to "yes" or "no" value or convert
+# equivalents to "yes" or "no"
+function verify_yes_no() {
+    local VAR=$1
+    local VAL=$(eval echo \$$VAR)
+    if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$VAL:") -eq 0 ]; then
+        >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid '$VAR' value of '$VAL'. Should be 'yes' or 'no'${NORMAL}"
+        echo "INVALID"
+        return 1
+    fi
+    if [ $(echo ":y:yes:true:1:" | grep -ic ":$VAL:") -eq 1 ]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+    return 0
+}
 
-# Verify WITH_RADIUS settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$WITH_RADIUS:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$WITH_RADIUS value of '$WITH_RADIUS'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$WITH_RADIUS:") -eq 1 ]; then
-    WITH_RADIUS=yes
-else
-    WITH_RADIUS=no
-fi
+ALL_YES_NO="\
+    WITH_TIMINGS \
+    WITH_BBSIM \
+    WITH_RADIUS \
+    WITH_ONOS \
+    WITH_TP \
+    CONFIG_SADIS \
+    JUST_K8S \
+    DEPLOY_K8S \
+    INSTALL_ONOS_APPS \
+    SKIP_RESTART_API \
+    INSTALL_KUBECTL \
+    INSTALL_HELM \
+    USE_GO \
+    WAIT_ON_DOWN \
+    "
 
-# Verify WITH_ONOS settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$WITH_ONOS:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$WITH_ONOS value of '$WITH_ONOS'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$WITH_ONOS:") -eq 1 ]; then
-    WITH_ONOS=yes
-else
-    WITH_ONOS=no
-fi
+ALL_OPTIONS="\
+    NAME \
+    TYPE \
+    $ALL_YES_NO \
+    VOLTHA_LOG_LEVEL \
+    VOLTHA_CHART \
+    VOLTHA_ADAPTER_SIM_CHART \
+    VOLTHA_ADAPTER_OPEN_OLT_CHART \
+    VOLTHA_ADAPTER_OPEN_ONU_CHART \
+    ONOS_TAG \
+    ONOS_API_PORT \
+    ONOS_SSH_PORT \
+    VOLTHA_API_PORT \
+    VOLTHA_SSH_PORT \
+    VOLTHA_ETCD_PORT \
+    "
 
-# Verify JUST_K8S settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$JUST_K8S:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$JUST_K8S value of '$JUST_K8S'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$JUST_K8S:") -eq 1 ]; then
-    JUST_K8S=yes
-else
-    JUST_K8S=no
-fi
+# Iterate over yes/no configuration options and validate
+for VAR in $ALL_YES_NO; do
+    eval $VAR=$(verify_yes_no $VAR)
+    if [ "$(eval echo \$$VAR)" == "INVALID" ]; then
+        exit 1;
+    fi
+done
 
-# Verify DEPLOY_K8S settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$DEPLOY_K8S:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$DEPLOY_K8S value of '$DEPLOY_K8S'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$DEPLOY_K8S:") -eq 1 ]; then
-    DEPLOY_K8S=yes
-else
-    DEPLOY_K8S=no
-fi
-
-# Verify INSTALL_KUBECTL settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$INSTALL_KUBECTL:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$INSTALL_KUBECTL value of '$INSTALL_KUBECTL'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$INSTALL_KUBECTL:") -eq 1 ]; then
-    INSTALL_KUBECTL=yes
-else
-    INSTALL_KUBECTL=no
-fi
-
-# Verify SKIP_RESTART_API settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$SKIP_RESTART_API:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$SKIP_RESTART_API value of '$SKIP_RESTART_API'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$SKIP_RESTART_API:") -eq 1 ]; then
-    SKIP_RESTART_API=yes
-else
-    SKIP_RESTART_API=no
-fi
-
-# Verify USE_GO settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$USE_GO:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$USE_GO value of '$USE_GO'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$USE_GO:") -eq 1 ]; then
+# Convert USE_GO from yes/no to true/false for helm chart usage
+if [ "$USE_GO" == "yes" ]; then
     USE_GO=true
 else
     USE_GO=false
 fi
 
-# Verify INSTALL_HELM settting and convert uniform value of yes or no
-if [ $(echo ":y:yes:true:n:no:false:1:0:" | grep -ic ":$INSTALL_HELM:") -eq 0 ]; then
-    >&2 echo -e "${RED}${BOLD}${ERROR}ERROR:${NORMAL}${RED} Invalid \$INSTALL_HELM value of '$INSTALL_HELM'. Should be 'yes' or 'no'${NORMAL}"
-    exit 1
-fi
-
-if [ $(echo ":y:yes:true:1:" | grep -ic ":$INSTALL_HELM:") -eq 1 ]; then
-    INSTALL_HELM=yes
-else
-    INSTALL_HELM=no
-fi
-
-if [ "$TYPE" == "full" ]; then
-   ONOS_API_PORT=${ONOS_API_PORT:-8182}
-   ONOS_SSH_PORT=${ONOS_SSH_PORT:-8102}
-   VOLTHA_API_PORT=${VOLTHA_API_PORT:-55556}
-   VOLTHA_SSH_PORT=${VOLTHA_SSH_PORT:-5023}
-else
-    ONOS_API_PORT=${ONOS_API_PORT:-8181}
-    ONOS_SSH_PORT=${ONOS_SSH_PORT:-8101}
-    VOLTHA_API_PORT=${VOLTHA_API_PORT:-55555}
-    VOLTHA_SSH_PORT=${VOLTHA_SSH_PORT:-5022}
-fi
-
-if [ "$1" == "get" -a "$2" == "voltconfig" ]; then
-    echo "$HOME/.volt/config-$TYPE"
-    exit
-fi
-
-if [ $# -ne 1 -o $(echo ":up:down:" | grep -c ":$1:") -ne 1 ]; then 
-    >&2 echo "up or down?"
-    exit 1
-fi
-
-if [ "$1" == "down" ]; then
-    if [ $DEPLOY_K8S == "yes" ]; then
-        if [ -x ./bin/kind ]; then
-            exec ./bin/kind delete cluster --name voltha-$TYPE
-        else
-           >&2 echo "Kind doesn't seem to be installed, so nothing to do. Bye."
-        fi
-    else
-        EXISTS=$(helm list -q)
-        EXPECT="etcd-operator onos open-olt open-onu sim voltha bbsim radius"
-        INTERSECT=
-        for i in $EXISTS; do
-            if [ $(echo $EXPECT | grep -c $i) -eq 1 ]; then
-                HAVE="$HAVE $i"
-            fi
-        done
-        if [ "$HAVE X" != " X" ]; then
-            ./bin/helm delete --purge $HAVE
-        fi
-fi
-    exit 
-fi
-
-LOG="install-$TYPE.log"
-date > $LOG
-
-# Output install options to log
-echo "OPTIONS" >> $LOG
-ALL_OPTIONS="TYPE WITH_BBSIM WITH_RADIUS WITH_ONOS JUST_K8S DEPLOY_K8S \
-    SKIP_RESTART_API INSTALL_KUBECTL INSTALL_HELM USE_GO VOLTHA_LOG_LEVEL \
-    VOLTHA_CHART VOLTHA_ADAPTER_SIM_CHART VOLTHA_ADAPTER_OPEN_OLT_CHART \
-    VOLTHA_ADAPTER_OPEN_ONU_CHART CONFIG_VER SADIS_VER OLT_VER AAA_VER DHCP_VER"
-for O in $ALL_OPTIONS; do
-    VAL=$(eval echo \$$O)
-    if [ $O == "USE_GO" ]; then
-        VAL="$(echo $VAL| test $(grep -c true) -eq 1 && echo yes || echo no)"
-    fi
-    if [ ! -z "$VAL" ]; then
-        printf "    %-30s = %s\n" $O $VAL >> $LOG
-    fi
-done
-
-spin() {
-    PARTS="\
-        \xe2\xa2\x8e\xe2\xa1\xb0 \
-        \xe2\xa2\x8e\xe2\xa1\xa1 \
-        \xe2\xa2\x8e\xe2\xa1\x91 \
-        \xe2\xa2\x8e\xe2\xa0\xb1 \
-        \xe2\xa0\x8e\xe2\xa1\xb1 \
-        \xe2\xa2\x8a\xe2\xa1\xb1 \
-        \xe2\xa2\x8c\xe2\xa1\xb1 \
-        \xe2\xa2\x86\xe2\xa1\xb1 \
-        "
-    IDX=1
-    tput civis
+mkdir -p .voltha
+touch .voltha/ports
+HAVE=$(grep $NAME .voltha/ports)
+if [ "$HAVE X" == " X" ]; then
+    # Find free port prefix
+    START=81
     while true; do
-       C=$(echo $PARTS | cut '-d ' -f $IDX)
-       echo -en "$C"
-       IDX=$(expr $IDX + 1)
-       if [ $IDX -gt 8 ]; then
-           IDX=1
-       fi
-       sleep .15 
-       echo -en "\r"
+        if [ $(grep -c $START .voltha/ports) -eq 0 ]; then
+            break
+        fi
+        START=$(expr $START + 1)
     done
+    DELTA=$(expr $START - 81)
+    ONOS_API_PORT=${START}81
+    ONOS_SSH_PORT=${START}01
+    VOLTHA_API_PORT=5$(expr 55 + $DELTA)55
+    VOLTHA_SSH_PORT=$(expr 50 + $DELTA)22
+    VOLTHA_ETCD_PORT=$(expr 23 + $DELTA)79
+else
+    VALUES=$(echo $HAVE | sed -e 's/\s//g' | cut -d= -f2)
+    ONOS_API_PORT=$(echo $VALUES | cut -d, -f1)
+    ONOS_SSH_PORT=$(echo $VALUES | cut -d, -f2)
+    VOLTHA_API_PORT=$(echo $VALUES | cut -d, -f3)
+    VOLTHA_SSH_PORT=$(echo $VALUES | cut -d, -f4)
+    VOLTHA_ETCD_PORT=$(echo $VALUES | cut -d, -f5)
+fi
+
+PORTTMP=$(mktemp -u)
+cat .voltha/ports | grep -v $NAME > $PORTTMP
+echo "$NAME=$ONOS_API_PORT,$ONOS_SSH_PORT,$VOLTHA_API_PORT,$VOLTHA_SSH_PORT,$VOLTHA_ETCD_PORT" >> $PORTTMP
+cp $PORTTMP .voltha/ports
+rm -f $PORTTMP
+
+ONOS_TAG=${ONOS_TAG:-}
+if [ "$WITH_TP" == "yes" -a "$ONOS_TAG X" == " X" ]; then
+    ONOS_TAG="voltha-1.7"
+fi
+export ONOS_API_PORT ONOS_SSH_PORT
+
+IDX=1
+CLOCK="TIME:"
+SPIN_PARTS=
+NOT_VERIFIED=
+THEX=
+BUILD=
+CROSS=
+ENTER=
+VERIFIED=
+HELM=
+OLD_KEY=
+BIRD=
+HIGH_VOLTAGE=
+PLUG=
+RESTART=
+FORWARD=
+INSTALL=
+STOP=
+GO=
+DOWNLOAD=
+GEAR=
+NO_ENTRY=
+LOCK=
+
+if [ $FANCY -eq 1 ]; then
+    SPIN_PARTS="\
+            \xe2\xa2\x8e\xe2\xa1\xb0 \
+            \xe2\xa2\x8e\xe2\xa1\xa1 \
+            \xe2\xa2\x8e\xe2\xa1\x91 \
+            \xe2\xa2\x8e\xe2\xa0\xb1 \
+            \xe2\xa0\x8e\xe2\xa1\xb1 \
+            \xe2\xa2\x8a\xe2\xa1\xb1 \
+            \xe2\xa2\x8c\xe2\xa1\xb1 \
+            \xe2\xa2\x86\xe2\xa1\xb1 \
+            "
+    CLOCK="\xe2\x8f\xb1"
+    THEX="${RED}${BOLD}\xe2\x9c\x97\x20${NORMAL}"
+    ENTER="${YELLOW}${BOLD}\xe2\x8e\x86${NORMAL}"
+    CROSS="${YELLOW}${BOLD}\xe2\x9c\x9a${NORMAL}"
+    BUILD="${YELLOW}${BOLD}\xf0\x9f\x8f\x97${NORMAL}"
+    NOT_VERIFIED="$BUILD"
+    VERIFIED="${GREEN}${BOLD}\xe2\x9c\x93\x20${NORMAL}"
+    HELM="${BLUE}${BOLD}\xE2\x8E\x88${NORMAL}"
+    OLD_KEY="\xF0\x9F\x97\x9D"
+    BIRD="\xF0\x9F\x90\xA6"
+    HIGH_VOLTAGE="\xE2\x9A\xA1"
+    PLUG="\xF0\x9F\xa7\xa9"
+    RESTART="\xf0\x9f\x94\x84"
+    FORWARD="\xE2\x87\xA8"
+    INSTALL="\xF0\x9F\x8F\x97"
+    STOP="\xf0\x9f\x9b\x91"
+    GO="\xf0\x9f\x9a\x80"
+    DOWNLOAD="\xf0\x9f\x93\xa5"
+    GEAR="\xe2\x9a\x99"
+    NO_ENTRY="\xe2\x9b\x94"
+    LOCK="\xf0\x9f\x94\x92"
+fi
+
+duration() {
+    local h=$(expr $1 / 3600)
+    local m=$(expr $1 % 3600 / 60)
+    local s=$(expr $1 % 60)
+    local t=""
+
+    if [ $h -gt 0 ]; then
+        t="$t${h}h"
+    fi
+    if [ $m -gt 0 ]; then
+        t="$t${m}m"
+    fi
+    echo "$t${s}s"
 }
 
-SPIN_PARTS="\
-        \xe2\xa2\x8e\xe2\xa1\xb0 \
-        \xe2\xa2\x8e\xe2\xa1\xa1 \
-        \xe2\xa2\x8e\xe2\xa1\x91 \
-        \xe2\xa2\x8e\xe2\xa0\xb1 \
-        \xe2\xa0\x8e\xe2\xa1\xb1 \
-        \xe2\xa2\x8a\xe2\xa1\xb1 \
-        \xe2\xa2\x8c\xe2\xa1\xb1 \
-        \xe2\xa2\x86\xe2\xa1\xb1 \
-        "
-IDX=1
-NOT_VERIFIED="\xe2\x9c\x97\x20"
-VERIFIED="\xe2\x9c\x93\x20"
-HELM="\xE2\x8E\x88"
-OLD_KEY="\xF0\x9F\x97\x9D"
-BIRD="\xF0\x9F\x90\xA6"
-HIGH_VOLTAGE="\xE2\x9A\xA1"
-PLUG="\xF0\x9F\xa7\xa9"
-RESTART="\xf0\x9f\x94\x84"
-FORWARD="\xE2\x87\xA8"
-INSTALL="\xF0\x9F\x8F\x97"
-STOP="\xf0\x9f\x9b\x91"
-GO="\xf0\x9f\x9a\x80"
-DOWNLOAD="\xf0\x9f\x93\xa5"
-GEAR="\xe2\x9a\x99"
-NO_ENTRY="\xe2\x9b\x94"
-LOCK="\xf0\x9f\x94\x92"
+printtime() {
+    local INDENT=
+    if [ "$1" == "-" ]; then
+        INDENT="  "
+        shift
+    fi
+    echo -e "$INDENT  $CLOCK  $(duration $1)"
+}
 
 bspin() {
-    tput civis
     IDX=1
     local INDENT=
     if [ "$1" == "-" ]; then
         INDENT="  "
         shift
     fi
-    echo -en "$INDENT   $*"
+    if [ $FANCY -eq 0 ]; then
+        LINE=$(echo $* | sed -e 's/[\s+-]//g')
+        if [ "$LINE X" == " X" ]; then
+            return
+        fi
+        echo -e "$CIVIS$INDENT$*"
+    else
+        echo -en "$CIVIS$INDENT   $*"
+    fi
 }
 
 sspin() {
@@ -304,11 +312,19 @@ sspin() {
         INDENT="  "
         shift
     fi
-    C=$(echo $SPIN_PARTS | cut '-d ' -f $IDX)
-    echo -en "\r$INDENT$C $*"
-    IDX=$(expr $IDX + 1)
-    if [ $IDX -gt 8 ]; then
-        IDX=1
+    if [ $FANCY -eq 0 ]; then
+        LINE=$(echo $* | sed -e 's/[\s+-]//g')
+        if [ "$LINE X" == " X" ]; then
+            return
+        fi
+        echo -e "$INDENT$*"
+    else
+        C=$(echo $SPIN_PARTS | cut '-d ' -f $IDX)
+        echo -en "\r$INDENT$C $*"
+        IDX=$(expr $IDX + 1)
+        if [ $IDX -gt 8 ]; then
+            IDX=1
+        fi
     fi
 }
 
@@ -318,31 +334,116 @@ espin() {
         INDENT="  "
         shift
     fi
-    echo -e "\r$INDENT$*"
-    tput cnorm
+    if [ $FANCY -eq 0 ]; then
+        LINE=$(echo $* | sed -e 's/[\s+-]//g')
+        if [ "$LINE X" == " X" ]; then
+            return
+        fi
+        echo -e "$INDENT$*"
+    else
+        echo -e "\r$INDENT$*$CNORM"
+    fi
+}
+
+if [ "$1" == "get" -a "$2" == "voltconfig" ]; then
+    echo "$HOME/.volt/config-$NAME"
+    exit
+fi
+
+if [ $# -ne 1 -o $(echo ":up:down:dump:" | grep -c ":$1:") -ne 1 ]; then 
+    >&2 echo "What wouild you like to do today:"
+    >&2 echo "  up   - bring up voltha"
+    >&2 echo "  down - tear down voltha"
+    >&2 echo "  dump - create a debug dump of running system"
+    exit 1
+fi
+
+push_onos_config() {
+    local MSG=$1
+    local RESOURCE=$2
+    local DATA=$3
+
+    bspin - "$MSG $GEAR"
+    while true; do
+        (set -x; curl --fail -sSL --user karaf:karaf -X POST -H Content-Type:application/json http://127.0.0.1:$ONOS_API_PORT/onos/v1/$RESOURCE --data @$DATA >>$LOG 2>&1) >>$LOG 2>&1
+        if [ $? -eq 0 ]; then
+            break
+        fi
+        sleep .2
+        sspin -
+    done
+    espin - $VERIFIED
+}
+
+override_onos_app() {
+    local APP=$1
+    local NAME=$(basename $APP | sed -e 's/^[0-9][0-9]*-//g' -e 's/-.*$//g')
+    while true; do
+        sspin -
+        # Attempt to delete old version (if it exists)
+        (set -x; curl --fail -sSL --user karaf:karaf -X DELETE http://127.0.0.1:$ONOS_API_PORT/onos/v1/applications/$NAME >>$LOG 2>&1) >>$LOG 2>&1
+        sspin -
+        if [ $? -ne 0 ]; then
+            continue
+        fi
+        (set -x; curl --fail -sSL --user karaf:karaf -X POST -H Content-Type:application/octet-stream http://127.0.0.1:$ONOS_API_PORT/onos/v1/applications?activate=true --data-binary @$APP >>$LOG 2>&1) >>$LOG 2>&1
+        if [ $? -eq 0 ]; then
+            break
+        fi
+        sleep .2
+    done
+}
+
+activate_onos_app() {
+    local MSG="$1"
+    local APP=$2
+
+    bspin - "$MSG $GO"
+    while true; do
+        sspin -
+        (set -x; curl --fail -sSL --user karaf:karaf -X POST http://127.0.0.1:$ONOS_API_PORT/onos/v1/applications/$APP/active >>$LOG 2>&1) >>$LOG 2>&1
+        if [ $? -eq 0 ]; then
+            break
+        fi
+        sleep .2
+    done
+    espin - "$VERIFIED"
 }
 
 count_pods() {
     local NAMESPACE=$1; shift
-    local PODS=$(kubectl -n $NAMESPACE get pod -o go-template="{{range .items}}{{.metadata.name}}/{{.status.phase}}/_{{range .status.containerStatuses}}{{.ready}}_{{end}} {{end}}")
+    if [ "$NAMESPACE" == "all-namespaces" ]; then
+        NAMESPACE="--all-namespaces"
+    else
+        NAMESPACE="-n $NAMESPACE"
+    fi
+    echo "$NAMESPACE" > /tmp/t
+    local STATES=$1; shift
+    echo "$STATES" >> /tmp/t
+    local PODS=$(kubectl get $NAMESPACE  pod -o go-template="{{range .items}}{{.metadata.name}}/{{.status.phase}}/_{{range .status.containerStatuses}}{{.ready}}_{{end}} {{end}}")
     local COUNT=0
-    local PATTERNS=$*
+    local PATTERNS="$*"
     for POD in $PODS; do
         local NAME=$(echo $POD | cut -d/ -f 1)
         local STATE=$(echo $POD | cut -d/ -f 2)
         local CONTAINERS=$(echo $POD | cut -d/ -f 3 | sed -e 's/_/ /g')
-        if [ "$STATE" == "Running" ]; then
+        if [ "$STATES" == "*" -o $(echo "$STATES" | grep -c ":$STATE:") -ne 0 ]; then
+            echo "IN WITH $POD" >> /tmp/t
             local TOTAL=$(echo $CONTAINERS | wc -w)
             local FOUND=$(echo $CONTAINERS | grep -o true | wc -l)
             if [ $TOTAL -eq $FOUND ]; then
                 for PATTERN in $PATTERNS; do
+                    echo "TEST $PATTERN AGAINST $NAME" >> /tmp/t
                     if [[ $NAME =~ $PATTERN ]]; then
+                        echo "COUNT $NAME" >> /tmp/t
                         COUNT=$(expr $COUNT + 1)
+                        break
                     fi
                 done
             fi
         fi
     done
+    echo $COUNT >> /tmp/t
     echo $COUNT
 }
 
@@ -353,19 +454,28 @@ wait_for_pods() {
     fi
     local NAMESPACE=$1; shift
     local EXPECT=$1; shift
+    local TYPE=$1; shift
     local RETRY=$1; shift
     local MESSAGE=$1; shift
     local PATTERNS=$*
-    local HAVE=$(count_pods $NAMESPACE $PATTERNS)
+    local HAVE=$(count_pods $NAMESPACE ":Running:" $PATTERNS)
+    local ALL=$HAVE
+    if [ "$TYPE" == "only" ]; then
+        ALL=$(count_pods "all-namespaces" "*" ".*")
+    fi
     COUNT=$(expr 300 / 15)
     bspin $INDENT $MESSAGE
     sspin $INDENT
-    if [ $HAVE -ne $EXPECT ]; then
-        while [ $HAVE -ne $EXPECT ]; do
+    if [ $HAVE -ne $EXPECT -o $ALL -ne $HAVE ]; then
+        while [ $HAVE -ne $EXPECT -o $ALL -ne $HAVE ]; do
             sspin $INDENT
             COUNT=$(expr $COUNT - 1)
             if [ $COUNT -eq 0 ]; then
-                HAVE=$(count_pods $NAMESPACE $PATTERNS)
+                HAVE=$(count_pods $NAMESPACE ":Running:" $PATTERNS)
+                ALL=$HAVE
+                if [ "$TYPE" == "only" ]; then
+                    ALL=$(count_pods "all-namespaces" "*" ".*")
+                fi
                 COUNT=$(expr 300 / 15)
             fi
             sleep .15
@@ -378,25 +488,164 @@ wait_for_pods() {
     return 0
 }
 
+if [ "$1" == "down" ]; then
+    echo "Tearing down voltha cluster $NAME"
+    LOG="down-$NAME.log"
+    echo $(date -u +"%Y%m%dT%H%M%SZ") >$LOG
+    if [ $DEPLOY_K8S == "yes" ]; then
+        if [ -x ./bin/kind ]; then
+            bspin "Delete Kubernetes Kind Cluster"
+            (set -x; ./bin/kind delete cluster --name voltha-$NAME >>$LOG 2>&1) >>$LOG 2>&1
+            espin $VERIFIED
+        else
+            espin "$NO_ENTRY Delete Kubernetes Kind Cluster: kind command not found"
+        fi
+    else
+        EXISTS=$(helm list -q)
+        EXPECT="etcd-operator onos open-olt open-onu sim voltha bbsim radius"
+        bspin "Remove Helm Deployments"
+        for i in $EXISTS; do
+            if [ $(echo $EXPECT | grep -c $i) -eq 1 ]; then
+                sspin "Remove Helm Deployments: $i$CEOL"
+                (set -x; ./bin/helm delete --purge $i >>$LOG 2>&1) >>$LOG 2>&1
+            fi
+        done
+        espin "$VERIFIED Remove Helm Deployments$CEOL"
+        if [ "$WAIT_ON_DOWN" == "yes" ]; then
+            # There should only be 13 or 15 PODs in the kube-system name
+            # space and no other PODs
+
+            PODS="coredns-.* \
+                etcd-voltha-$NAME-control-plane \
+                kindnet-.* \
+                kube-apiserver-voltha-$NAME-control-plane \
+                kube-controller-manager-voltha-$NAME-control-plane \
+                kube-proxy-.* \
+                kube-scheduler-voltha-$NAME-control-plane \
+                tiller-deploy-.*"
+            EXPECT=$(test "$TYPE" == "minimal" && echo "13" || echo "15")
+            wait_for_pods "all-namespaces" $EXPECT "only" -1 "Waiting for only system PODs to be running" $PODS
+        fi
+    fi
+    bspin "Remove port-forwards: onos-ui-$NAME"
+    for i in $(screen -ls | grep onos-ui-$NAME | awk '{print $1}'); do
+        sspin
+        (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
+    sspin "Remove port-forwards: onos-ssh-$NAME$CEOL"
+    for i in $(screen -ls | grep onos-ssh-$NAME | awk '{print $1}'); do
+        sspin
+        (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
+    sspin "Remove port-forwards: voltha-api-$NAME$CEOL"
+    for i in $(screen -ls | grep voltha-api-$NAME | awk '{print $1}'); do
+        sspin
+        (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
+    sspin "Remove port-forwards: voltha-ssh-$NAME$CEOL"
+    for i in $(screen -ls | grep voltha-ssh-$NAME | awk '{print $1}'); do
+        sspin
+        (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
+    sspin "Remove port-forwards: voltha-etcd-$NAME$CEOL"
+    for i in $(screen -ls | grep voltha-etcd-$NAME | awk '{print $1}'); do
+        sspin
+        (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
+    espin "$VERIFIED Remove port-forwards$CEOL"
+    exit 
+fi
+
+if [ "$1" == "dump" ]; then
+    LOG="dump-$NAME.log"
+    TS=$(date -u +"%Y%m%dT%H%M%SZ")
+    WORK=$(mktemp -u -d)
+    DATA=$WORK/voltha-debug-dump-$NAME-$TS
+    mkdir -p $DATA
+    echo $TS > $LOG
+    echo -e "Capturing debug dump to voltha-debug-dump-$NAME-$TS.tgz"
+    bspin - "Copy install log"
+    if [ -f install-$NAME.log ]; then
+        (set -x; cp install-$NAME.log $DATA/install-$NAME.log) >>$LOG 2>&1
+        espin - $VERIFIED
+    else
+        espin - "$NO_ENTRY Copy install log: install-$NAME.log not found"
+    fi
+    bspin - "Dumping Kubernetes PODs"
+    (set -x; kubectl get --all-namespaces pods >> $DATA/all-pods.txt 2>&1) >>$LOG 2>&1
+    espin - $VERIFIED
+    bspin - "Dumping Kubernetes SERVICEs"
+    (set -x; kubectl get --all-namespaces svc >> $DATA/all-services.txt 2>&1) >>$LOG 2>&1
+    espin - $VERIFIED
+    bspin - "Dumping Kubernetes EVENTs"
+    (set -x; kubectl get --all-namespaces events >> $DATA/all-events.txt 2>&1) >>$LOG 2>&1
+    espin - $VERIFIED
+    bspin - "Dumping VOLTHA POD details"
+    PODS=$(kubectl get -n voltha pod -o name)
+    for POD in $PODS; do
+        sspin - "Dumping VOLTHA POD details: $POD$CEOL"
+        mkdir -p $DATA/$POD
+        (set -x; kubectl describe -n voltha $POD >> $DATA/$POD/describe.txt 2>&1) >>$LOG 2>&1
+        sspin - "Dumping VOLTHA POD details: $POD"
+        (set -x; kubectl logs -n voltha --all-containers --previous $LOG_ARGS $POD >> $DATA/$POD/logs-previous.txt 2>&1) >>$LOG 2>&1
+        sspin - "Dumping VOLTHA POD details: $POD"
+        (set -x; kubectl logs -n voltha --all-containers $LOG_ARGS $POD >> $DATA/$POD/logs-current.txt 2>&1) >>$LOG 2>&1
+        sspin - "Dumping VOLTHA POD details: $POD"
+    done
+    espin - "$VERIFIED Dumping VOLTHA POD details$CEOL"
+    bspin - "Dumping ETCD"
+    if [ "$(which etcdctl) X" != " X" ]; then
+        (set -x; ETCDCTL_API=3 etcdctl --endpoints localhost:$VOLTHA_ETCD_PORT get --prefix service/voltha | hexdump -C >> $DATA/etcd.hex 2>&1) >>$LOG 2>&1
+        espin - $VERIFIED
+    else
+        espin - "$NO_ENTRY Dumping ETCD: etcdctl command not available"
+    fi
+    bspin - "Creating compressed TAR: voltha-debug-dump-$NAME-$TS.tgz"
+    (set -x; tar -C $WORK -zcf voltha-debug-dump-$NAME-$TS.tgz ./voltha-debug-dump-$NAME-$TS) >>$LOG 2>&1
+    espin - $VERIFIED
+    bspin - "Cleanup"
+    (set -x; rm -rf $WORK) >>$LOG 2>&1
+    espin - $VERIFIED
+    bspin - "$(ls -l voltha-debug-dump-$NAME-$TS.tgz)"
+    espin - $VERIFIED
+    exit
+fi
+
+LOG="install-$NAME.log"
+date > $LOG
+echo "PORTS=$ONOS_API_PORT,$ONOS_SSH_PORT,$VOLTHA_API_PORT,$VOLTHA_SSH_PORT,$VOLTHA_ETCD_PORT" >> $LOG
+
+# Output install options to log
+echo "OPTIONS" >> $LOG
+for O in $ALL_OPTIONS; do
+    VAL=$(eval echo \$$O)
+    if [ $O == "USE_GO" ]; then
+        VAL="$(echo $VAL| test $(grep -c true) -eq 1 && echo yes || echo no)"
+    fi
+    if [ ! -z "$VAL" ]; then
+        printf "    %-30s = %s\n" $O $VAL >> $LOG
+    fi
+done
+
 helm_install() { 
     local INDENT=
     if [ "$1" == "-" ]; then
         INDENT=$1; shift
     fi
     local NAMESPACE=$1; shift
-    local NAME=$1; shift
+    local INAME=$1; shift
     local CHART=$1; shift
     local MESSAGE=$*
 
     COUNT=$(expr 300 / 15)
     bspin $INDENT $MESSAGE
-    (set -x; helm install -f $TYPE-values.yaml --set use_go=$USE_GO --set defaults.log_level=$VOLTHA_LOG_LEVEL --namespace $NAMESPACE --name $NAME $CHART >>$LOG 2>&1) >>$LOG 2>&1
+    (set -x; helm install -f $NAME-values.yaml --set use_go=$USE_GO --set defaults.log_level=$VOLTHA_LOG_LEVEL --namespace $NAMESPACE --name $INAME $EXTRA_HELM_FLAGS $CHART >>$LOG 2>&1) >>$LOG 2>&1
     SUCCESS=$?
     while [ $SUCCESS -ne 0 ]; do
         sspin $INDENT
         COUNT=$(expr $COUNT - 1)
         if [ $COUNT -eq 0 ]; then
-            (set -x; helm install -f $TYPE-values.yaml --set defaults.log_level=$VOLTHA_LOG_LEVEL --namespace $NAMESPACE --name $NAME $CHART >>$LOG 2>&1) >>$LOG 2>&1
+            (set -x; helm install -f $NAME-values.yaml --set use_go=$USE_GO --set defaults.log_level=$VOLTHA_LOG_LEVEL --namespace $NAMESPACE --name $INAME $EXTRA_HELM_FLAGS $CHART >>$LOG 2>&1) >>$LOG 2>&1
             COUNT=$(expr 300 / 15)
         fi
         sleep .15
@@ -411,6 +660,7 @@ export GOPATH=$(pwd)
 mkdir -p $GOPATH/bin
 espin $VERIFIED
 
+STIME=$(date +%s)
 if [ "$INSTALL_KUBECTL" == "no" ]; then
     bspin "Skip kubectl install"
     espin $NO_ENTRY
@@ -426,7 +676,11 @@ else
         espin - $VERIFIED
     fi
 fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
+STIME=$(date +%s)
 if [ "$DEPLOY_K8S" == "no" ]; then
     bspin "Skip Kubernetes/Kind Deployment"
     espin $NO_ENTRY
@@ -443,6 +697,11 @@ else
     fi
 fi
 
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
+
+STIME=$(date +%s)
 if [ "$INSTALL_HELM" == "no" ]; then
     bspin "Skip Helm Install"
     espin $NO_ENTRY
@@ -457,7 +716,11 @@ else
         espin - $VERIFIED
     fi
 fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
+STIME=$(date +%s)
 bspin "Verify voltctl $HIGH_VOLTAGE"
 if [ -x $GOPATH/bin/voltctl ]; then
     espin $VERIFIED
@@ -468,44 +731,52 @@ else
     (set -x; chmod 755 $GOPATH/bin/voltctl >>$LOG 2>&1) >>$LOG 2>&1
     espin - $VERIFIED
 fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
 bspin "Verify command PATH"
 export PATH=$GOPATH/bin:$PATH
 espin $VERIFIED
 
+STIME=$(date +%s)
 if [ "$DEPLOY_K8S" == "yes" ]; then
-    HAVE=$(kind get clusters | grep -c voltha-$TYPE)
+    HAVE=$(kind get clusters | grep -c voltha-$NAME)
     bspin "Verify Kubernetes/Kind Cluster"
     sspin
     if [ $HAVE -eq 0 ]; then
         espin $NOT_VERIFIED
         bspin - "Verify cluster configuration"
-        if [ ! -r ./$TYPE-cluster.cfg ]; then
+        if [ ! -r ./$NAME-cluster.cfg ]; then
             espin - $NOT_VERIFIED
-	        bspin - "Download cluster configuration: $TYPE-cluster.cfg $DOWNLOAD"
-            (set -x; curl -o ./$TYPE-cluster.cfg -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/$TYPE-cluster.cfg >>$LOG 2>&1) >>$LOG 2>&1
+	        bspin - "Download cluster configuration: $TYPE-cluster.cfg to $NAME-cluster.cfg $DOWNLOAD"
+            (set -x; curl -o ./$NAME-cluster.cfg -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/$TYPE-cluster.cfg >>$LOG 2>&1) >>$LOG 2>&1
 	        espin - $VERIFIED
 	    else
 	        espin - $VERIFIED
 	    fi
-        kind create cluster --name voltha-$TYPE --config $TYPE-cluster.cfg
+        kind create cluster --name voltha-$NAME --config $NAME-cluster.cfg
      else
         espin $VERIFIED
     fi
 
-    export KUBECONFIG="$(kind get kubeconfig-path --name="voltha-$TYPE")"
+    export KUBECONFIG="$(kind get kubeconfig-path --name="voltha-$NAME")"
     P="coredns-.* \
-        etcd-voltha-$TYPE-control-plane \
+        etcd-voltha-$NAME-control-plane \
         kindnet-.* \
-        kube-apiserver-voltha-$TYPE-control-plane \
-        kube-controller-manager-voltha-$TYPE-control-plane \
+        kube-apiserver-voltha-$NAME-control-plane \
+        kube-controller-manager-voltha-$NAME-control-plane \
         kube-proxy-.* \
-        kube-scheduler-voltha-$TYPE-control-plane"
+        kube-scheduler-voltha-$NAME-control-plane"
 
     EXPECT=$(test "$TYPE" == "minimal" && echo "12" || echo "14")
-    wait_for_pods - "kube-system" $EXPECT -1 "Waiting for system PODs to start" $P
+    wait_for_pods - "kube-system" $EXPECT "includes" -1 "Waiting for system PODs to start" $P
+fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
 fi
 
+STIME=$(date +%s)
 COUNT=$(count_pods "kube-system" "tiller-deploy-.*")
 bspin "Verify Helm"
 if [ $COUNT -ne 1 ]; then
@@ -518,7 +789,7 @@ if [ $COUNT -ne 1 ]; then
         bspin - "Initialize Helm"
         (set -x; helm init --upgrade >>$LOG 2>&1) >>$LOG 2>&1
         espin - $VERIFIED
-        wait_for_pods - "kube-system" 1 -1 "Waiting for Tiller POD to start" "tiller-deploy-.*"
+        wait_for_pods - "kube-system" 1 "includes" -1 "Waiting for Tiller POD to start" "tiller-deploy-.*"
     fi
     bspin - "Add Google Incubator repository to Helm"
     (set -x; helm repo add incubator https://kubernetes-charts-incubator.storage.googleapis.com >>$LOG 2>&1) >>$LOG 2>&1
@@ -559,16 +830,23 @@ if [ $COUNT -ne 1 ]; then
 else
     espin $VERIFIED
 fi
-wait_for_pods - "kube-system" 1 -1 "Waiting for Tiller POD to start" "tiller-deploy-.*"
+wait_for_pods - "kube-system" 1 "includes" -1 "Waiting for Tiller POD to start" "tiller-deploy-.*"
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
-bspin "Verify Helm values file: $TYPE-values.yaml"
-if [ ! -r "./$TYPE-values.yaml" ]; then
+STIME=$(date +%s)
+bspin "Verify Helm values file: $NAME-values.yaml"
+if [ ! -r "./$NAME-values.yaml" ]; then
     espin $NOT_VERIFIED
-    bspin - "Download Helm values file: $TYPE-values.yaml $DOWNLOAD"
-    (set -x; curl -o ./$TYPE-values.yaml -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/$TYPE-values.yaml >>$LOG 2>&1) >>$LOG 2>&1
+    bspin - "Download Helm values file: $TYPE-values.yaml to $NAME-values.yaml $DOWNLOAD"
+    (set -x; curl -o ./$NAME-values.yaml -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/$TYPE-values.yaml >>$LOG 2>&1) >>$LOG 2>&1
     espin - $VERIFIED
 else
     espin $VERIFIED
+fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
 fi
 
 if [ "$JUST_K8S" == "yes" ]; then
@@ -580,7 +858,7 @@ if [ "$JUST_K8S" == "yes" ]; then
     echo "" | tee -a $LOG
     echo -en $BOLD
     if [ $DEPLOY_K8S == "yes" ]; then
-        echo "export KUBECONFIG=\"\$(./bin/kind get kubeconfig-path --name=\"voltha-$TYPE\")\"" | tee -a $LOG
+        echo "export KUBECONFIG=\"\$(./bin/kind get kubeconfig-path --name=\"voltha-$NAME\")\"" | tee -a $LOG
     fi
     echo "export PATH=$GOPATH/bin:\$PATH" | tee -a $LOG
     echo -en $NORMAL
@@ -589,6 +867,7 @@ if [ "$JUST_K8S" == "yes" ]; then
     exit 0
 fi
 
+STIME=$(date +%s)
 bspin "Verify ETCD Operator $OLD_KEY"
 if [ $(helm list --deployed --short --namespace voltha "^etcd-operator\$" | wc -l) -ne 1 ]; then
     espin $NOT_VERIFIED 
@@ -597,47 +876,83 @@ else
     espin $VERIFIED
 fi
 EXPECT=$(test "$TYPE" == "minimal" && echo "1" || echo "3")
-wait_for_pods - "voltha" $EXPECT -1 "Waiting for ETCD Operator to start" "etcd-operator-.*"
+wait_for_pods - "voltha" $EXPECT "includes" -1 "Waiting for ETCD Operator to start" "etcd-operator-.*"
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
+STIME=$(date +%s)
 if [ $WITH_ONOS == "yes" ]; then
     bspin "Verify ONOS installed $BIRD"
     if [ $(helm list --deployed --short --namespace default "^onos\$" | wc -l) -ne 1 ]; then
         espin $NOT_VERIFIED
-        helm_install - default onos onf/onos "Install ONOS"
+        SET_TAG=
+        if [ "$ONOS_TAG X" != " X" ]; then
+            SET_TAG="--set images.onos.tag=$ONOS_TAG"
+        fi
+        EXTRA_HELM_FLAGS="$SET_TAG $EXTRA_HELM_FLAGS" helm_install - default onos onf/onos "Install ONOS"
     else
         espin $VERIFIED
     fi
-    wait_for_pods - "default" 1 -1 "Waiting for ONOS to start" "onos-.*"
+    wait_for_pods - "default" 1 "includes" -1 "Waiting for ONOS to start" "onos-.*"
     
     bspin - "Forward ONOS API port $FORWARD"
-    for i in $(screen -ls | grep onos-ui-$TYPE | awk '{print $1}'); do
+    for i in $(screen -ls | grep onos-ui-$NAME | awk '{print $1}'); do
         (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
     done
-    (set -x; screen -dmS onos-ui-$TYPE bash -c "while true; do kubectl port-forward service/onos-ui $ONOS_API_PORT:8181; done" >>$LOG 2>&1) >>$LOG 2>&1
+    (set -x; screen -dmS onos-ui-$NAME bash -c "while true; do kubectl port-forward service/onos-ui $ONOS_API_PORT:8181; done" >>$LOG 2>&1) >>$LOG 2>&1
     espin - $VERIFIED
     bspin - "Forward ONOS SSH port $FORWARD"
-    for i in $(screen -ls | grep onos-ssh-$TYPE | awk '{print $1}'); do
+    for i in $(screen -ls | grep onos-ssh-$NAME | awk '{print $1}'); do
         (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
     done
-    (set -x; screen -dmS onos-ssh-$TYPE bash -c "while true; do kubectl port-forward service/onos-ssh $ONOS_SSH_PORT:8101; done" >>$LOG 2>&1) >>$LOG 2>&1
+
+
+    (set -x; screen -dmS onos-ssh-$NAME bash -c "while true; do kubectl port-forward service/onos-ssh $ONOS_SSH_PORT:8101; done" >>$LOG 2>&1) >>$LOG 2>&1
     espin - $VERIFIED
-    if [ ! -x ./onos-files/install-onos-applications.sh ]; then
-        bspin - "Verify or download ONOS configuration support files $DOWNLOAD"
-        (set -x; mkdir -p ./onos-files  >>$LOG 2>&1) >>$LOG 2>&1
-        for i in dhcp-to-controller-flow.json install-onos-applications.sh olt-onos-enableExtraneousRules.json olt-onos-netcfg.json olt-onos-olt-settings.json radius-config.json; do
-            if [ ! -r ./onos-files/$i ]; then
-                (set -x; curl -o ./onos-files/$i -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/onos-files/$i >>$LOG 2>&1) >>$LOG 2>&1
-            fi
-        done
-        (set -x; chmod 755 ./onos-files/install-onos-applications.sh >>$LOG 2>&1) >>$LOG 2>&1
-        espin - $VERIFIED
+    bspin - "Verify or download ONOS configuration support files $DOWNLOAD"
+    ONOS_FILES="olt-onos-enableExtraneousRules.json  olt-onos-olt-settings.json onos-aaa.json \
+        onos-dhcpl2relay.json onos-kafka.json onos-sadis-no-tp.json onos-sadis-tp.json"
+    (set -x; mkdir -p ./onos-files  >>$LOG 2>&1) >>$LOG 2>&1
+    for i in $ONOS_FILES; do
+        if [ ! -r ./onos-files/$i ]; then
+            (set -x; curl -o ./onos-files/$i -sSL https://raw.githubusercontent.com/ciena/kind-voltha/master/onos-files/$i >>$LOG 2>&1) >>$LOG 2>&1
+        fi
+    done
+    espin - $VERIFIED
+
+    if [ $INSTALL_ONOS_APPS == "yes" ]; then
+        bspin - "Installing custom ONOS applications"
+        if [ -x onos-files/onos-apps -a $(ls -1 onos-files/onos-apps/*.oar 2>/dev/null | wc -l) -gt 0 ];  then
+            for OAR in $(ls -1 onos-files/onos-apps/*.oar); do
+                sspin - "Installing custom ONOS applications - $OAR$CEOL"
+                override_onos_app $OAR
+            done
+            espin - "$VERIFIED Installing custom ONOS applications$CEOL"
+        else
+            espin - "$NOT_VERIFIED Installing custom ONOS applications - None Found"
+        fi
     fi
-    
-    bspin - "Install required ONOS applications $INSTALL"
-    (set -x; ./onos-files/install-onos-applications.sh >>$LOG 2>&1) >>$LOG 2>&1
-    espin - $VERIFIED
+  
+    push_onos_config "Push ONOS Kafka Configuration" "network/configuration/apps/org.opencord.kafka" "onos-files/onos-kafka.json"
+    push_onos_config "Push ONOS DHCP L2 Relay Configuration" "network/configuration/apps/org.opencord.dhcpl2relay" "onos-files/onos-dhcpl2relay.json"
+    push_onos_config "Enable VOLTHA ONOS DHCP provisioning" "configuration/org.opencord.olt.impl.Olt" "onos-files/olt-onos-olt-settings.json"
+    push_onos_config "Enabling extraneous rules for ONOS" "configuration/org.onosproject.net.flow.impl.FlowRuleManager" "onos-files/olt-onos-enableExtraneousRules.json"
+    if [ -f onos-files/onos-sadis.json ]; then
+        push_onos_config "[optional] Push ONOS SADIS Configuration" "network/configuration/apps/org.opencord.sadis" "onos-files/onos-sadis.json"
+    elif [ "$CONFIG_SADIS" == "yes" ]; then
+        SADIS_CFG=onos-files/onos-sadis-no-tp.json
+        if [ "$WITH_TP" == "yes" ]; then
+            SADIS_CFG=onos-files/onos-sadis-tp.json
+        fi
+        push_onos_config "[optional] Push ONOS SADIS Configuration" "network/configuration/apps/org.opencord.sadis" "$SADIS_CFG"
+    fi
+fi
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
 fi
 
+STIME=$(date +%s)
 bspin "Verify VOLTHA installed $HIGH_VOLTAGE"
 if [ $(helm list --deployed --short --namespace voltha "^voltha\$" | wc -l) -ne 1 ]; then
     espin $NOT_VERIFIED
@@ -655,8 +970,12 @@ VOLTHA="ofagent-.* \
     voltha-kafka-.* \
     voltha-zookeeper-.*"
 EXPECT=$(test "$TYPE" == "minimal" && echo "9" || echo "11")
-wait_for_pods - "voltha" $EXPECT -1 "Waiting for VOLTHA Core to start" $VOLTHA
+wait_for_pods - "voltha" $EXPECT "includes" -1 "Waiting for VOLTHA Core to start" $VOLTHA
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
+STIME=$(date +%s)
 echo -e "Verify Adapters $PLUG"
 bspin - "Verify Simulated Adapters installed"
 if [ $(helm list --deployed --short --namespace voltha "^sim\$" | wc -l) -ne 1 ]; then
@@ -682,9 +1001,13 @@ else
 fi
 
 ADAPTERS="adapter-.*"
-wait_for_pods - "voltha" 4 -1 "Waiting for adapters to start" $ADAPTERS
+wait_for_pods - "voltha" 4 "includes" -1 "Waiting for adapters to start" $ADAPTERS
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
 if [ $WITH_BBSIM == "yes" ]; then
+    STIME=$(date +%s)
     echo -e "Verify BBSIM $PLUG"
     bspin - "Verify BBSIM Installed"
     if [ $(helm list --deployed --short --namespace voltha "^bbsim\$" | wc -l) -ne 1 ]; then
@@ -693,10 +1016,14 @@ if [ $WITH_BBSIM == "yes" ]; then
     else
         espin - $VERIFIED
     fi
-    wait_for_pods - "voltha" 1 -1 "Waiting for BBSIM to start" "bbsim-.*"
+    wait_for_pods - "voltha" 1 "includes" -1 "Waiting for BBSIM to start" "bbsim-.*"
+    if [ "$WITH_TIMINGS" == "yes" ]; then
+        printtime $(expr $(date +%s) - $STIME)
+    fi
 fi
 
 if [ $WITH_RADIUS == "yes" ]; then
+    STIME=$(date +%s)
     echo -e "Verify RADIUS $LOCK"
     bspin - "Verify RADIUS Installed"
     if [ $(helm list --deployed --short --namespace voltha "^radius\$" | wc -l) -ne 1 ]; then
@@ -705,47 +1032,60 @@ if [ $WITH_RADIUS == "yes" ]; then
     else
         espin - $VERIFIED
     fi
-    wait_for_pods - "voltha" 1 -1 "Waiting for RADIUS to start" "radius-.*"
+    wait_for_pods - "voltha" 1 "includes" -1 "Waiting for RADIUS to start" "radius-.*"
+    if [ "$WITH_TIMINGS" == "yes" ]; then
+        printtime $(expr $(date +%s) - $STIME)
+    fi
 fi
 
+STIME=$(date +%s)
 if [ $SKIP_RESTART_API == "no" ]; then
     echo -e "Restart VOLTHA API $RESTART"
     API="voltha-api-server-.* ofagent-.*"
     (set -x; kubectl scale --replicas=0 deployment -n voltha voltha-api-server ofagent >>$LOG 2>&1) >>$LOG 2>&1
-    wait_for_pods - "voltha" 0 -1 "Wait for API to stop $STOP" $API
+    wait_for_pods - "voltha" 0 "includes" -1 "Wait for API to stop $STOP" $API
     (set -x; kubectl scale --replicas=1 deployment -n voltha voltha-api-server ofagent >>$LOG 2>&1) >>$LOG 2>&1
-    wait_for_pods - "voltha" 2 -1 "Wait for API to re-start $GO" $API
+    wait_for_pods - "voltha" 2 "includes" -1 "Wait for API to re-start $GO" $API
 else
     bspin "Skip VOLTHA API Restart"
     espin $NO_ENTRY
 fi
 
 bspin - "Forward VOLTHA API port $FORWARD"
-for i in $(screen -ls | grep voltha-api-$TYPE | awk '{print $1}'); do
+for i in $(screen -ls | grep voltha-api-$NAME | awk '{print $1}'); do
     (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
 done
-(set -x; screen -dmS voltha-api-$TYPE bash -c "while true; do kubectl port-forward -n voltha service/voltha-api $VOLTHA_API_PORT:55555; done" >>$LOG 2>&1) >>$LOG 2>&1
+(set -x; screen -dmS voltha-api-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-api $VOLTHA_API_PORT:55555; done" >>$LOG 2>&1) >>$LOG 2>&1
 espin - $VERIFIED
 bspin - "Forward VOLTHA SSH port $FORWARD"
-for i in $(screen -ls | grep voltha-ssh-$TYPE | awk '{print $1}'); do
+for i in $(screen -ls | grep voltha-ssh-$NAME | awk '{print $1}'); do
     (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
 done
-(set -x; screen -dmS voltha-ssh-$TYPE bash -c "while true; do kubectl port-forward -n voltha service/voltha-cli $VOLTHA_SSH_PORT:5022; done" >>$LOG 2>&1) >>$LOG 2>&1
+(set -x; screen -dmS voltha-ssh-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-cli $VOLTHA_SSH_PORT:5022; done" >>$LOG 2>&1) >>$LOG 2>&1
 espin - $VERIFIED
+bspin - "Forward VOLTHA ETCD port $FORWARD"
+for i in $(screen -ls | grep voltha-etcd-$NAME | awk '{print $1}'); do
+    (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+done
+(set -x; screen -dmS voltha-etcd-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-etcd-cluster-client $VOLTHA_ETCD_PORT:2379; done" >>$LOG 2>&1) >>$LOG 2>&1
+espin - $VERIFIED
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    printtime $(expr $(date +%s) - $STIME)
+fi
 
 if [ $WITH_ONOS == "yes" -a $WITH_RADIUS == "yes" ]; then
     bspin "Configure ONOS RADIUS Connection $GEAR"
-    (set -x; cat onos-files/radius-config.json | sed -e "s/:RADIUS_IP:/$(kubectl -n voltha get service/radius -o jsonpath={.spec.clusterIP})/g" | curl -XPOST -sSL http://karaf:karaf@localhost:8181/onos/v1/network/configuration -H Content-type:application/json -d@- >>$LOG 2>&1) >>$LOG 2>&1
+    (set -x; cat onos-files/onos-aaa.json | sed -e "s/:RADIUS_IP:/$(kubectl -n voltha get service/radius -o jsonpath={.spec.clusterIP})/g" | curl -XPOST -sSL http://karaf:karaf@localhost:8181/onos/v1/network/configuration/apps/org.opencord.aaa -H Content-type:application/json -d@- >>$LOG 2>&1) >>$LOG 2>&1
     espin $VERIFIED
 fi
 
 bspin "Create voltctl configuration file"
 (set -x; mkdir -p $HOME/.volt >>$LOG 2>&1) >>$LOG 2>&1
-(set -x; voltctl -a v2 -s localhost:$VOLTHA_API_PORT config > $HOME/.volt/config-$TYPE 2>>$LOG) >>$LOG 2>&1
+(set -x; voltctl -a v2 -s localhost:$VOLTHA_API_PORT config > $HOME/.volt/config-$NAME 2>>$LOG) >>$LOG 2>&1
 espin $VERIFIED
 
-if [ ! -f "$TYPE-env.sh" ]; then
-    touch $TYPE-env.sh
+if [ ! -f "$NAME-env.sh" ]; then
+    touch $NAME-env.sh
 fi
 
 for O in $ALL_OPTIONS; do
@@ -753,21 +1093,21 @@ for O in $ALL_OPTIONS; do
     if [ $O == "USE_GO" ]; then
         VAL="$(echo $VAL| test $(grep -c true) -eq 1 && echo yes || echo no)"
     fi
-    if [ ! -z "$VAL" -a $(grep -c "^export $O=" $TYPE-env.sh) -eq 0 ]; then
-        echo "export $O=\"$(eval echo \$$O)\"" >> $TYPE-env.sh
+    if [ ! -z "$VAL" -a $(grep -c "^export $O=" $NAME-env.sh) -eq 0 ]; then
+        echo "export $O=\"$(eval echo \$$O)\"" >> $NAME-env.sh
     fi
 done
 
-if [ $DEPLOY_K8S == "yes" -a $(grep -c "^export KUBECONFIG=" $TYPE-env.sh) -eq 0 ]; then
-    echo "export KUBECONFIG=\"$(./bin/kind get kubeconfig-path --name=voltha-$TYPE)\"" >> $TYPE-env.sh
+if [ $DEPLOY_K8S == "yes" -a $(grep -c "^export KUBECONFIG=" $NAME-env.sh) -eq 0 ]; then
+    echo "export KUBECONFIG=\"$(./bin/kind get kubeconfig-path --name=voltha-$NAME)\"" >> $NAME-env.sh
 fi
 
-if [ $(grep -c "^export VOLTCONFIG=" $TYPE-env.sh) -eq 0 ]; then
-    echo "export VOLTCONFIG=\"$HOME/.volt/config-$TYPE\"" >> $TYPE-env.sh
+if [ $(grep -c "^export VOLTCONFIG=" $NAME-env.sh) -eq 0 ]; then
+    echo "export VOLTCONFIG=\"$HOME/.volt/config-$NAME\"" >> $NAME-env.sh
 fi
 
-if [ $(grep -c "^export PATH=" $TYPE-env.sh) -eq 0 ]; then
-    echo "export PATH=\"$GOPATH/bin:\$PATH\"" >> $TYPE-env.sh
+if [ $(grep -c "^export PATH=" $NAME-env.sh) -eq 0 ]; then
+    echo "export PATH=\"$GOPATH/bin:\$PATH\"" >> $NAME-env.sh
 fi
 
 echo ""
@@ -777,11 +1117,15 @@ echo "tools required by VOLTHA in your command path.                         " |
 echo "" | tee -a $LOG
 echo -en $BOLD
 if [ $DEPLOY_K8S == "yes" ]; then
-    echo "export KUBECONFIG=\"\$(./bin/kind get kubeconfig-path --name=\"voltha-$TYPE\")\"" | tee -a $LOG
+    echo "export KUBECONFIG=\"\$(./bin/kind get kubeconfig-path --name=\"voltha-$NAME\")\"" | tee -a $LOG
 fi
-echo "export VOLTCONFIG=\"$HOME/.volt/config-$TYPE\"" | tee -a $LOG
+echo "export VOLTCONFIG=\"$HOME/.volt/config-$NAME\"" | tee -a $LOG
 echo "export PATH=$GOPATH/bin:\$PATH" | tee -a $LOG
 echo -en $NORMAL
 echo "" | tee -a $LOG
 echo "Thank you for choosing kind-voltha for you quick cluster needs." | tee -a $LOG
+
+if [ "$WITH_TIMINGS" == "yes" ]; then
+    echo -e "$CLOCK  ${BOLD}TOTAL: $(duration $(expr $(date +%s) - $TOTAL_START_TIME))${NORMAL}"
+fi
 
