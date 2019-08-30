@@ -33,8 +33,10 @@ images:
     repository: "etowah/voltha-ofagent"
     tag: "tptest"
   ro_core:
-    repository: "etowah/voltha-ro-core"
-    tag: "tptest"
+    repository: "smbaker/voltha-ro-core"
+    tag: "test"
+#    repository: "etowah/voltha-ro-core"
+#    tag: "tptest"
   rw_core:
     repository: "smbaker/voltha-rw-core"
     tag: "test"
