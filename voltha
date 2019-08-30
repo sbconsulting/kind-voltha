@@ -539,6 +539,11 @@ if [ "$1" == "down" ]; then
         sspin
         (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
     done
+    sspin "Remove port-forwards: voltha-api-affinity-$NAME$CEOL"
+    for i in $(screen -ls | grep voltha-api-affinity-$NAME | awk '{print $1}'); do
+       sspin
+       (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+    done
     sspin "Remove port-forwards: voltha-ssh-$NAME$CEOL"
     for i in $(screen -ls | grep voltha-ssh-$NAME | awk '{print $1}'); do
         sspin
@@ -1050,7 +1055,13 @@ bspin - "Forward VOLTHA API port $FORWARD"
 for i in $(screen -ls | grep voltha-api-$NAME | awk '{print $1}'); do
     (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
 done
-(set -x; screen -dmS voltha-api-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-api $VOLTHA_API_PORT:55555; done" >>$LOG 2>&1) >>$LOG 2>&1
+(set -x; screen -dmS voltha-api-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-api --address 0.0.0.0 $VOLTHA_API_PORT:55555; done" >>$LOG 2>&1) >>$LOG 2>&1
+espin - $VERIFIED
+bspin - "Forward VOLTHA API affinity port $FORWARD"
+for i in $(screen -ls | grep voltha-api-affinity-$NAME | awk '{print $1}'); do
+    (set -x; screen -X -S $i quit >>$LOG 2>&1) >>$LOG 2>&1
+done
+(set -x; screen -dmS voltha-api-affinity-$NAME bash -c "while true; do kubectl port-forward -n voltha service/voltha-api --address 0.0.0.0 55554:55554; done" >>$LOG 2>&1) >>$LOG 2>&1
 espin - $VERIFIED
 bspin - "Forward VOLTHA SSH port $FORWARD"
 for i in $(screen -ls | grep voltha-ssh-$NAME | awk '{print $1}'); do
